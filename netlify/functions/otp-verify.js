@@ -1,4 +1,9 @@
 import { initFirebase } from "./utils/firebase.js";
+import { 
+  doc, 
+  getDoc, 
+  setDoc
+} from "firebase/firestore";
 import crypto from "crypto";
 
 const headers = {
@@ -80,13 +85,13 @@ export const handler = async (event, context) => {
     }
 
     // Initialize Firebase
-    let adminDb, admin;
+    let clientDb, admin;
     try {
-      const fb = initFirebase();
-      adminDb = fb.admin.firestore();
+      const fb = await initFirebase();
+      clientDb = fb.db;
       admin = fb.admin;
     } catch (fbErr) {
-      console.error("[OTP Verify] Firebase Admin initialization failed:", fbErr);
+      console.error("[OTP Verify] Firebase Client initialization failed:", fbErr);
       return {
         statusCode: 500,
         headers,
@@ -95,10 +100,10 @@ export const handler = async (event, context) => {
     }
 
     // Fetch verification session
-    const otpDocRef = adminDb.collection("otp_verifications").doc(normalizedPhone);
-    const otpDoc = await otpDocRef.get();
+    const docRef = doc(clientDb, "otp_verifications", normalizedPhone);
+    const otpDoc = await getDoc(docRef);
 
-    if (!otpDoc.exists) {
+    if (!otpDoc.exists()) {
       return {
         statusCode: 400,
         headers,
@@ -136,7 +141,7 @@ export const handler = async (event, context) => {
     const submittedHash = sha256(otp.trim());
     if (record.otpHash !== submittedHash) {
       const newWrongAttempts = (record.wrongAttempts || 0) + 1;
-      await otpDocRef.update({ wrongAttempts: newWrongAttempts });
+      await setDoc(docRef, { wrongAttempts: newWrongAttempts }, { merge: true });
 
       if (newWrongAttempts >= 5) {
         return {
@@ -161,7 +166,7 @@ export const handler = async (event, context) => {
     }
 
     // Mark as verified
-    await otpDocRef.update({ verified: true });
+    await setDoc(docRef, { verified: true }, { merge: true });
 
     // Leftover Auth user cleanup (for both normalized and raw formatted emails)
     const rawDigits = phone.replace(/\D/g, "");
@@ -178,8 +183,8 @@ export const handler = async (event, context) => {
     for (const email of emailsToClean) {
       try {
         const authUser = await admin.auth().getUserByEmail(email);
-        const userDoc = await adminDb.collection("users").doc(authUser.uid).get();
-        if (!userDoc.exists) {
+        const userDoc = await getDoc(doc(clientDb, "users", authUser.uid));
+        if (!userDoc.exists()) {
           await admin.auth().deleteUser(authUser.uid);
           console.log(`[OTP Verify] Deleted leftover Auth user ${authUser.uid} for ${email}`);
         }

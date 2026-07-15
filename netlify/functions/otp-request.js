@@ -1,4 +1,15 @@
 import { initFirebase } from "./utils/firebase.js";
+import { 
+  doc, 
+  getDoc, 
+  setDoc, 
+  collection, 
+  query, 
+  where, 
+  getDocs,
+  limit,
+  addDoc
+} from "firebase/firestore";
 import crypto from "crypto";
 
 const headers = {
@@ -84,12 +95,12 @@ export const handler = async (event, context) => {
     }
 
     // Initialize Firebase
-    let adminDb;
+    let clientDb;
     try {
-      const fb = initFirebase();
-      adminDb = fb.admin.firestore();
+      const fb = await initFirebase();
+      clientDb = fb.db;
     } catch (fbErr) {
-      console.error("[OTP Request] Firebase Admin initialization failed:", fbErr);
+      console.error("[OTP Request] Firebase Client initialization failed:", fbErr);
       return {
         statusCode: 500,
         headers,
@@ -109,11 +120,10 @@ export const handler = async (event, context) => {
     // Rate Limiting checks
     try {
       // 1. IP-Based Limit: Max 5 requests/10-min window
-      const ipQuery = await adminDb.collection("otp_requests_log")
-        .where("ip", "==", clientIp)
-        .get();
+      const ipQuery = query(collection(clientDb, "otp_requests_log"), where("ip", "==", clientIp));
+      const ipSnap = await getDocs(ipQuery);
       
-      const ipRequestsInWindow = ipQuery.docs.filter(doc => {
+      const ipRequestsInWindow = ipSnap.docs.filter(doc => {
         const timestamp = doc.data().timestamp;
         return timestamp && timestamp >= tenMinutesAgo;
       });
@@ -135,11 +145,10 @@ export const handler = async (event, context) => {
       }
 
       // 2. Phone-Based Limit: Max 3 requests/10-min window
-      const phoneQuery = await adminDb.collection("otp_requests_log")
-        .where("phone", "==", normalizedPhone)
-        .get();
+      const phoneQuery = query(collection(clientDb, "otp_requests_log"), where("phone", "==", normalizedPhone));
+      const phoneSnap = await getDocs(phoneQuery);
 
-      const phoneRequestsInWindow = phoneQuery.docs.filter(doc => {
+      const phoneRequestsInWindow = phoneSnap.docs.filter(doc => {
         const timestamp = doc.data().timestamp;
         return timestamp && timestamp >= tenMinutesAgo;
       });
@@ -164,8 +173,8 @@ export const handler = async (event, context) => {
 
     // Active Verification Guard
     try {
-      const existingOtpDoc = await adminDb.collection("otp_verifications").doc(normalizedPhone).get();
-      if (existingOtpDoc.exists) {
+      const existingOtpDoc = await getDoc(doc(clientDb, "otp_verifications", normalizedPhone));
+      if (existingOtpDoc.exists()) {
         const existingData = existingOtpDoc.data();
         if (existingData && !existingData.verified && now < existingData.expiresAt) {
           const remainingSeconds = Math.ceil((existingData.expiresAt - now) / 1000);
@@ -185,8 +194,8 @@ export const handler = async (event, context) => {
 
     // Checks: Banned user, duplicate user registration
     try {
-      const bannedDoc = await adminDb.collection("banned_phone_numbers").doc(normalizedPhone).get();
-      if (bannedDoc.exists) {
+      const bannedDoc = await getDoc(doc(clientDb, "banned_phone_numbers", normalizedPhone));
+      if (bannedDoc.exists()) {
         return {
           statusCode: 403,
           headers,
@@ -195,7 +204,7 @@ export const handler = async (event, context) => {
       }
 
       // Standardize search for phone number in users database
-      const userSnap = await adminDb.collection("users").where("phone", "==", normalizedPhone).limit(1).get();
+      const userSnap = await getDocs(query(collection(clientDb, "users"), where("phone", "==", normalizedPhone), limit(1)));
       if (!userSnap.empty) {
         return {
           statusCode: 400,
@@ -207,15 +216,15 @@ export const handler = async (event, context) => {
       console.warn("[OTP Request] User duplicate/banned checks failed or skipped:", dbCheckErr);
     }
 
-    // Generate 4-digit OTP
-    const generatedOtp = Math.floor(1000 + Math.random() * 9000).toString();
+    // Generate 6-digit OTP
+    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpHashValue = sha256(generatedOtp);
-    const expiresAt = now + 5 * 60 * 1000; // 5 minutes
+    const expiresAt = now + 3 * 60 * 1000; // 3 minutes
 
     // Gateway parameters
     const apiKey = process.env.SMS_API_KEY || "SMS91AAC4DA572E2101A63CBCFD6FA58F34";
     const apiUrl = process.env.SMS_API_URL || "https://sms.corp.com.bd/api.php";
-    const message = `Please Confirm Your Oder . Your OTP - ${generatedOtp}`;
+    const message = `Donate Blood অ্যাপে আপনার যাচাইকরণ কোডটি হলো: ${generatedOtp}। এটি ৩ মিনিটের জন্য কার্যকর থাকবে।`;
 
     // Send HTTP Request to Bulk SMS Gateway
     let responseText = "";
@@ -269,7 +278,7 @@ export const handler = async (event, context) => {
 
     // Save session to Firestore
     try {
-      await adminDb.collection("otp_verifications").doc(normalizedPhone).set({
+      await setDoc(doc(clientDb, "otp_verifications", normalizedPhone), {
         phone: normalizedPhone,
         otpHash: otpHashValue,
         createdAt: now,
@@ -279,7 +288,7 @@ export const handler = async (event, context) => {
       });
 
       // Write rate limit log
-      await adminDb.collection("otp_requests_log").add({
+      await addDoc(collection(clientDb, "otp_requests_log"), {
         ip: clientIp,
         phone: normalizedPhone,
         timestamp: now
@@ -298,7 +307,7 @@ export const handler = async (event, context) => {
       headers,
       body: JSON.stringify({
         success: true,
-        message: "আপনার মোবাইলে একটি ৪ ডিজিটের যাচাইকরণ কোড পাঠানো হয়েছে।"
+        message: "আপনার মোবাইলে একটি ৬ ডিজিটের যাচাইকরণ কোড পাঠানো হয়েছে।"
       })
     };
 
