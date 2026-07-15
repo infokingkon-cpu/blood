@@ -1,0 +1,322 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account registration and demographic information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "phone": { "type": "string" },
+        "fullName": { "type": "string", "maxLength": 100 },
+        "bloodGroup": { "type": "string", "enum": ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"] },
+        "role": { "type": "string", "enum": ["donor", "receiver", "both"] },
+        "profileCompleted": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastDonationDate": { "type": "string", "format": "date-time" },
+        "donationAvailable": { "type": "boolean" },
+        "blocked": { "type": "boolean" },
+        "banned": { "type": "boolean" },
+        "address": { "type": "string", "maxLength": 500 },
+        "division": { "type": "string", "maxLength": 50 },
+        "district": { "type": "string", "maxLength": 50 },
+        "upazila": { "type": "string", "maxLength": 50 },
+        "union": { "type": "string", "maxLength": 50 },
+        "facebookProfile": { "type": "string", "maxLength": 200 },
+        "whatsAppNumber": { "type": "string", "maxLength": 20 },
+        "bio": { "type": "string", "maxLength": 300 },
+        "profilePicture": { "type": "string" },
+        "isAdmin": { "type": "boolean" }
+      },
+      "required": ["uid", "phone", "fullName", "role"]
+    },
+    "DonorPost": {
+      "title": "Donor Post",
+      "description": "Active donation offer post published by a donor",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string", "maxLength": 100 },
+        "bloodGroup": { "type": "string", "enum": ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"] },
+        "address": { "type": "string", "maxLength": 500 },
+        "district": { "type": "string" },
+        "upazila": { "type": "string" },
+        "phone": { "type": "string" },
+        "whatsApp": { "type": "string" },
+        "facebook": { "type": "string" },
+        "image": { "type": "string" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "paused": { "type": "boolean" }
+      },
+      "required": ["id", "userId", "name", "bloodGroup", "district", "upazila", "phone"]
+    },
+    "BloodRequest": {
+      "title": "Blood Request Post",
+      "description": "Post asking for emergency or standard blood donation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "patientName": { "type": "string", "maxLength": 100 },
+        "bloodGroup": { "type": "string", "enum": ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"] },
+        "requiredDate": { "type": "string" },
+        "hospitalName": { "type": "string", "maxLength": 200 },
+        "district": { "type": "string" },
+        "upazila": { "type": "string" },
+        "contactNumber": { "type": "string" },
+        "emergencyLevel": { "type": "string", "enum": ["normal", "emergency"] },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "completed", "cancelled"] }
+      },
+      "required": ["id", "userId", "patientName", "bloodGroup", "requiredDate", "hospitalName", "district", "upazila", "contactNumber", "emergencyLevel"]
+    },
+    "DirectRequest": {
+      "title": "Direct Request to Donor",
+      "description": "A direct blood application sent from a seeker to a specific donor",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "requesterId": { "type": "string" },
+        "donorId": { "type": "string" },
+        "bloodGroup": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "cancelled", "completed"] },
+        "hospitalName": { "type": "string" },
+        "emergencyLevel": { "type": "string" }
+      },
+      "required": ["id", "requesterId", "donorId", "bloodGroup"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "In-app notifications for users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["id", "userId", "title", "message", "createdAt", "read"]
+    },
+    "DonationHistory": {
+      "title": "Donation History",
+      "description": "Record of a successfully completed blood donation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "donorId": { "type": "string" },
+        "recipientName": { "type": "string", "maxLength": 100 },
+        "recipientDistrict": { "type": "string" },
+        "donationDate": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "donorId", "recipientName", "recipientDistrict", "donationDate"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "Report filed against an abusive or fake account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "reporterId": { "type": "string" },
+        "reportedUserId": { "type": "string" },
+        "reason": { "type": "string", "enum": ["ভুয়া তথ্য", "ভুল মোবাইল নম্বর", "প্রতারণার সন্দেহ", "অশোভন আচরণ", "অন্যান্য"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "closed"] }
+      },
+      "required": ["id", "reporterId", "reportedUserId", "reason", "createdAt", "status"]
+    },
+    "Feedback": {
+      "title": "Feedback",
+      "description": "User feedback, suggestions, or reports of issues",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["issue", "feedback", "suggestion"] },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "type", "message", "createdAt"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Admin broadcast messages",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "message", "createdAt", "active"]
+    },
+    "BannedPhone": {
+      "title": "Banned Phone",
+      "description": "List of phone numbers permanently banned from the platform",
+      "type": "object",
+      "properties": {
+        "phone": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "reason": { "type": "string" }
+      },
+      "required": ["phone", "createdAt"]
+    },
+    "Setting": {
+      "title": "Setting",
+      "description": "Admin configurable global system settings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "registrationEnabled": { "type": "boolean" },
+        "bloodRequestsEnabled": { "type": "boolean" },
+        "donationsEnabled": { "type": "boolean" },
+        "homepageNotice": { "type": "string" },
+        "maintenanceMode": { "type": "boolean" }
+      },
+      "required": ["id"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Admins mapping document",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" }
+      },
+      "required": ["id", "email"]
+    },
+    "SupportMessage": {
+      "title": "Support Message",
+      "description": "Contact messages sent to the admin support team",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "subject": { "type": "string" },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "phone", "subject", "message", "createdAt"]
+    },
+    "Hospital": {
+      "title": "Hospital",
+      "description": "Hospital or blood bank directory entity",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "licenseNumber": { "type": "string" },
+        "division": { "type": "string" },
+        "district": { "type": "string" },
+        "upazila": { "type": "string" },
+        "verified": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "phone", "division", "district", "upazila", "verified"]
+    },
+    "Volunteer": {
+      "title": "Volunteer",
+      "description": "Volunteer list directory entity",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "division": { "type": "string" },
+        "district": { "type": "string" },
+        "upazila": { "type": "string" },
+        "availableTime": { "type": "string" },
+        "transportAvailable": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "phone", "division", "district", "upazila"]
+    },
+    "AdminLog": {
+      "title": "Admin Log",
+      "description": "Admin activity and audit log",
+      "type": "object",
+      "properties": {
+        "adminId": { "type": "string" },
+        "adminName": { "type": "string" },
+        "action": { "type": "string" },
+        "targetUserId": { "type": "string" },
+        "details": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["adminId", "adminName", "action", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles collection"
+    },
+    "donor_posts": {
+      "schema": { "$ref": "#/entities/DonorPost" },
+      "description": "Donor active availability posts"
+    },
+    "blood_requests": {
+      "schema": { "$ref": "#/entities/BloodRequest" },
+      "description": "General public blood request posts"
+    },
+    "direct_requests": {
+      "schema": { "$ref": "#/entities/DirectRequest" },
+      "description": "Direct application requests to specific donors"
+    },
+    "notifications": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "In-app notifications"
+    },
+    "donation_history": {
+      "schema": { "$ref": "#/entities/DonationHistory" },
+      "description": "History of blood donations"
+    },
+    "reports": {
+      "schema": { "$ref": "#/entities/Report" },
+      "description": "Reported fake or abusive users list"
+    },
+    "feedback": {
+      "schema": { "$ref": "#/entities/Feedback" },
+      "description": "User feedbacks and suggestions"
+    },
+    "announcements": {
+      "schema": { "$ref": "#/entities/Announcement" },
+      "description": "Announcements by administrator"
+    },
+    "banned_phone_numbers": {
+      "schema": { "$ref": "#/entities/BannedPhone" },
+      "description": "List of banned mobile phone numbers"
+    },
+    "settings": {
+      "schema": { "$ref": "#/entities/Setting" },
+      "description": "Platform global options"
+    },
+    "admins": {
+      "schema": { "$ref": "#/entities/Admin" },
+      "description": "Mapped admins collection"
+    },
+    "support_messages": {
+      "schema": { "$ref": "#/entities/SupportMessage" },
+      "description": "Support query tickets"
+    },
+    "hospitals": {
+      "schema": { "$ref": "#/entities/Hospital" },
+      "description": "Hospital or blood bank directory"
+    },
+    "volunteers": {
+      "schema": { "$ref": "#/entities/Volunteer" },
+      "description": "Volunteers directory"
+    },
+    "admin_logs": {
+      "schema": { "$ref": "#/entities/AdminLog" },
+      "description": "Admin activity logs"
+    }
+  }
+}

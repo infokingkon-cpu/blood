@@ -1,0 +1,14 @@
+[[redirects]]
+  from = "/api/otp/request"
+  to = "/.netlify/functions/otp-request"
+  status = 200
+
+[[redirects]]
+  from = "/api/otp/verify"
+  to = "/.netlify/functions/otp-verify"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

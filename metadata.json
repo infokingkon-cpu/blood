@@ -1,0 +1,6 @@
+{
+  "name": "Donate Blood",
+  "description": "রক্তদাতা এবং রক্তগ্রহীতাদের মাঝে দ্রুত ও নিরাপদ যোগাযোগের জন্য একটি আধুনিক ও সহজ মাধ্যম।",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
