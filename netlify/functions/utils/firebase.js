@@ -1,4 +1,4 @@
-import admin from "firebase-admin";
+import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
 
@@ -15,13 +15,13 @@ let privateKey = process.env.FIREBASE_PRIVATE_KEY;
 if (serviceAccountKey) {
   try {
     const parsed = JSON.parse(serviceAccountKey);
-    credential = admin.credential.cert(parsed);
+    credential = cert(parsed);
     console.log("[Firebase Helper] Initialized credential using service account key.");
   } catch (err) {
     console.error("[Firebase Helper] Failed to parse service account key JSON:", err);
   }
 } else if (clientEmail && privateKey) {
-  credential = admin.credential.cert({
+  credential = cert({
     projectId,
     clientEmail,
     privateKey: privateKey.replace(/\\n/g, '\n'),
@@ -29,13 +29,14 @@ if (serviceAccountKey) {
   console.log("[Firebase Helper] Initialized credential using client email and private key.");
 }
 
-if (admin.apps.length === 0) {
+const apps = getApps();
+if (apps.length === 0) {
   try {
     const options = { projectId };
     if (credential) {
       options.credential = credential;
     }
-    admin.initializeApp(options);
+    initializeApp(options);
     console.log("[Firebase Helper] Firebase Admin SDK initialized successfully for project:", projectId);
   } catch (err) {
     console.error("[Firebase Helper] Firebase Admin initialization failed:", err);
@@ -50,4 +51,10 @@ const db = databaseId && databaseId !== "(default)"
 
 const auth = getAuth();
 
-export { db, auth, admin };
+// Legacy compatibility for code importing "admin" object
+const adminCompat = {
+  auth: () => auth,
+  firestore: () => db,
+};
+
+export { db, auth, adminCompat as admin };
