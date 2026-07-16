@@ -1,4 +1,4 @@
-import { initFirebase } from "./utils/firebase.js";
+import { db, admin } from "./utils/firebase.js";
 import crypto from "crypto";
 
 const headers = {
@@ -79,20 +79,8 @@ export const handler = async (event, context) => {
       };
     }
 
-    // Initialize Firebase
-    let adminDb, admin;
-    try {
-      const fb = await initFirebase();
-      adminDb = fb.db;
-      admin = fb.admin;
-    } catch (fbErr) {
-      console.error("[OTP Verify] Firebase Admin initialization failed:", fbErr);
-      return {
-        statusCode: 500,
-        headers,
-        body: JSON.stringify({ success: false, error: "ডাটাবেজ সংযোগে ত্রুটি ঘটেছে।" })
-      };
-    }
+    // Use initialized Firestore database
+    const adminDb = db;
 
     // Fetch verification session
     const docRef = adminDb.collection("otp_verifications").doc(normalizedPhone);

@@ -1,73 +1,53 @@
 import admin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+import { getAuth } from "firebase-admin/auth";
 
-const functionsDir = path.dirname(fileURLToPath(import.meta.url));
-
-export function getFirebaseConfig() {
-  const possiblePaths = [
-    path.resolve(process.cwd(), "firebase-applet-config.json"),
-    path.resolve(functionsDir, "../../../firebase-applet-config.json"),
-    path.resolve(functionsDir, "../../firebase-applet-config.json"),
-    path.resolve(functionsDir, "../firebase-applet-config.json"),
-    path.resolve(functionsDir, "firebase-applet-config.json")
-  ];
-
-  for (const configPath of possiblePaths) {
-    if (fs.existsSync(configPath)) {
-      try {
-        const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-        if (config && config.projectId) {
-          return config;
-        }
-      } catch (err) {
-        console.error("[Firebase Helper] Error reading config at", configPath, err);
-      }
-    }
-  }
-
-  // Fallback to Env variables
-  const config = {
-    apiKey: process.env.VITE_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY,
-    authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN || process.env.FIREBASE_AUTH_DOMAIN,
-    projectId: process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID,
-    storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET || process.env.FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || process.env.FIREBASE_MESSAGING_SENDER_ID,
-    appId: process.env.VITE_FIREBASE_APP_ID || process.env.FIREBASE_APP_ID,
-    firestoreDatabaseId: process.env.VITE_FIREBASE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID || "(default)"
-  };
-
-  if (config.projectId) {
-    return config;
-  }
-  return null;
+const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
+if (!projectId) {
+  throw new Error("Missing required environment variable: FIREBASE_PROJECT_ID or VITE_FIREBASE_PROJECT_ID");
 }
 
-export async function initFirebase() {
-  const config = getFirebaseConfig();
-  if (!config) {
-    console.error("[Firebase Helper] No Firebase configuration found in any path or env!");
-    throw new Error("Firebase configuration not found. Please set VITE_FIREBASE_PROJECT_ID etc.");
+let credential;
+const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_SERVICE_ACCOUNT;
+const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+
+if (serviceAccountKey) {
+  try {
+    const parsed = JSON.parse(serviceAccountKey);
+    credential = admin.credential.cert(parsed);
+    console.log("[Firebase Helper] Initialized credential using service account key.");
+  } catch (err) {
+    console.error("[Firebase Helper] Failed to parse service account key JSON:", err);
   }
-
-  // Init Firebase Admin SDK
-  if (admin.apps.length === 0) {
-    try {
-      admin.initializeApp({
-        projectId: config.projectId,
-      });
-      console.log("[Firebase Helper] Firebase Admin initialized with project:", config.projectId);
-    } catch (adminErr) {
-      console.error("[Firebase Helper] Error initializing Firebase Admin:", adminErr);
-    }
-  }
-
-  const dbId = config.firestoreDatabaseId;
-  const db = dbId && dbId !== "(default)" 
-    ? getFirestore(undefined, dbId) 
-    : getFirestore();
-
-  return { db, admin };
+} else if (clientEmail && privateKey) {
+  credential = admin.credential.cert({
+    projectId,
+    clientEmail,
+    privateKey: privateKey.replace(/\\n/g, '\n'),
+  });
+  console.log("[Firebase Helper] Initialized credential using client email and private key.");
 }
+
+if (admin.apps.length === 0) {
+  try {
+    const options = { projectId };
+    if (credential) {
+      options.credential = credential;
+    }
+    admin.initializeApp(options);
+    console.log("[Firebase Helper] Firebase Admin SDK initialized successfully for project:", projectId);
+  } catch (err) {
+    console.error("[Firebase Helper] Firebase Admin initialization failed:", err);
+    throw err;
+  }
+}
+
+const databaseId = process.env.FIREBASE_DATABASE_ID || process.env.VITE_FIREBASE_DATABASE_ID || "(default)";
+const db = databaseId && databaseId !== "(default)"
+  ? getFirestore(undefined, databaseId)
+  : getFirestore();
+
+const auth = getAuth();
+
+export { db, auth, admin };
