@@ -1,4 +1,4 @@
-import { db } from "./utils/firebase.js";
+import { initFirebase } from "./utils/firebase.js";
 import crypto from "crypto";
 
 const headers = {
@@ -83,8 +83,22 @@ export const handler = async (event, context) => {
       };
     }
 
-    // Use initialized Firestore database
-    const adminDb = db;
+    // Initialize Firebase and use Firestore database
+    let adminDb;
+    try {
+      const fb = await initFirebase();
+      adminDb = fb.db;
+    } catch (fbErr) {
+      console.error("[OTP Request] Firebase Admin initialization failed:", fbErr);
+      return {
+        statusCode: 500,
+        headers,
+        body: JSON.stringify({
+          success: false,
+          error: "ডাটাবেজ সংযোগে ত্রুটি ঘটেছে। বিস্তারিত: " + fbErr.message
+        })
+      };
+    }
 
     // Extract Client IP safely
     const clientIp = event.headers["x-nf-client-connection-ip"] || 
