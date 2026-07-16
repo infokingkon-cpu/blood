@@ -6,16 +6,16 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const _filename = typeof __filename !== "undefined" ? __filename : fileURLToPath(import.meta.url);
+const _dirname = typeof __dirname !== "undefined" ? __dirname : path.dirname(_filename);
 
 export function getFirebaseConfig() {
   const possiblePaths = [
     path.resolve(process.cwd(), "firebase-applet-config.json"),
-    path.resolve(__dirname, "../../../firebase-applet-config.json"),
-    path.resolve(__dirname, "../../firebase-applet-config.json"),
-    path.resolve(__dirname, "../firebase-applet-config.json"),
-    path.resolve(__dirname, "firebase-applet-config.json")
+    path.resolve(_dirname, "../../../firebase-applet-config.json"),
+    path.resolve(_dirname, "../../firebase-applet-config.json"),
+    path.resolve(_dirname, "../firebase-applet-config.json"),
+    path.resolve(_dirname, "firebase-applet-config.json")
   ];
 
   for (const configPath of possiblePaths) {
