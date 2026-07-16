@@ -38,19 +38,75 @@ import {
   Lock,
   PlusCircle,
   ToggleLeft,
-  ToggleRight
+  ToggleRight,
+  AlertTriangle,
+  CheckCircle
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { bangladeshLocations } from "../utils/bangladeshLocations";
 
 export const RequestsDashboardPage: React.FC = () => {
   const { user, showToast, refreshUserProfile } = useApp();
-  const [activeTab, setActiveTab] = useState<"incoming" | "outgoing" | "donor_post">("incoming");
+  const [activeTab, setActiveTab] = useState<"incoming" | "outgoing" | "donor_post" | "public_requests">("incoming");
   const [loading, setLoading] = useState(false);
   
   // Requests data
   const [incomingReqs, setIncomingReqs] = useState<any[]>([]);
   const [outgoingReqs, setOutgoingReqs] = useState<any[]>([]);
+
+  // Subscription to user's public blood requests
+  const [myPublicRequests, setMyPublicRequests] = useState<any[]>([]);
+  const [loadingPublicRequests, setLoadingPublicRequests] = useState(true);
+
+  // Public Request Management states
+  const [editingPublicReq, setEditingPublicReq] = useState<any>(null);
+  const [donePublicReq, setDonePublicReq] = useState<any>(null);
+  
+  // Forms for editing public request
+  const [pubEditPatient, setPubEditPatient] = useState("");
+  const [pubEditBloodGroup, setPubEditBloodGroup] = useState("A+");
+  const [pubEditUnits, setPubEditUnits] = useState(1);
+  const [pubEditHospital, setPubEditHospital] = useState("");
+  const [pubEditPhone, setPubEditPhone] = useState("");
+  const [pubEditDetails, setPubEditDetails] = useState("");
+  const [pubEditIsUrgent, setPubEditIsUrgent] = useState(true);
+  const [pubEditRequiredDate, setPubEditRequiredDate] = useState("");
+  const [pubEditDivision, setPubEditDivision] = useState("");
+  const [pubEditDistrict, setPubEditDistrict] = useState("");
+  const [pubEditUpazila, setPubEditUpazila] = useState("");
+
+  // Forms for marking public request as Done (completed)
+  const [pubDoneDonorName, setPubDoneDonorName] = useState("");
+  const [pubDoneDonorPhone, setPubDoneDonorPhone] = useState("");
+  const [pubDoneDate, setPubDoneDate] = useState(new Date().toISOString().split('T')[0]);
+  const [pubDoneNotes, setPubDoneNotes] = useState("");
+  const [pubDoneSubmitting, setPubDoneSubmitting] = useState(false);
+
+  // Subscribe to user's general blood requests
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    setLoadingPublicRequests(true);
+    const qMyRequests = query(
+      collection(db, "blood_requests"),
+      where("userId", "==", user.uid),
+      orderBy("createdAt", "desc")
+    );
+
+    const unsubscribeMyRequests = onSnapshot(qMyRequests, (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach((doc) => {
+        list.push({ id: doc.id, ...doc.data() });
+      });
+      setMyPublicRequests(list);
+      setLoadingPublicRequests(false);
+    }, (error) => {
+      console.error("My public requests subscription error:", error);
+      setLoadingPublicRequests(false);
+    });
+
+    return () => unsubscribeMyRequests();
+  }, [user?.uid]);
 
   // Setup Subscription for Incoming Requests
   useEffect(() => {
@@ -306,13 +362,13 @@ export const RequestsDashboardPage: React.FC = () => {
     }
   };
 
-  // Confirm Reported Donation Flow (4 Month Lock)
+  // Confirm Reported Donation Flow (3 Month Lock)
   const handleConfirmDonation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user?.uid) return;
 
     try {
-      const lockDurationDays = 120; // 4 months
+      const lockDurationDays = 90; // 3 months
       const lockExpiryDate = new Date();
       lockExpiryDate.setDate(lockExpiryDate.getDate() + lockDurationDays);
 
@@ -349,13 +405,13 @@ export const RequestsDashboardPage: React.FC = () => {
       await addDoc(collection(db, "notifications"), {
         userId: user.uid,
         title: "মহৎ কাজের জন্য আপনাকে ধন্যবাদ! ❤️🩸",
-        message: `আপনার রক্তদানের তথ্যটি সফলভাবে নিবন্ধিত হয়েছে। রক্ত সুরক্ষার্থে আগামী ৪ মাসের জন্য আপনার নতুন আবেদন ও সচলতা সাময়িকভাবে লক করা হয়েছে।`,
+        message: `আপনার রক্তদানের তথ্যটি সফলভাবে নিবন্ধিত হয়েছে। রক্ত সুরক্ষার্থে আগামী ৩ মাসের জন্য আপনার নতুন আবেদন ও সচলতা সাময়িকভাবে লক করা হয়েছে।`,
         createdAt: Timestamp.now(),
         read: false
       });
 
       await refreshUserProfile();
-      showToast("রক্তদান সফলভাবে নিবন্ধিত হয়েছে এবং ৪ মাসের লক কার্যকর করা হয়েছে।", "success");
+      showToast("রক্তদান সফলভাবে নিবন্ধিত হয়েছে এবং ৩ মাসের লক কার্যকর করা হয়েছে।", "success");
       setShowDonationModal(false);
 
       // Reset
@@ -366,6 +422,122 @@ export const RequestsDashboardPage: React.FC = () => {
     } catch (err) {
       console.error("Confirm donation error:", err);
       showToast("রক্তদান নিবন্ধনে সমস্যা হয়েছে। দয়া করে আবার চেষ্টা করুন।", "error");
+    }
+  };
+
+  // Update Public Blood Request from Dashboard
+  const handleUpdatePublicReq = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPublicReq?.id) return;
+    if (!pubEditPatient.trim() || !pubEditHospital.trim() || !pubEditPhone.trim() || !pubEditDivision || !pubEditDistrict || !pubEditUpazila || !pubEditRequiredDate.trim()) {
+      showToast("দয়া করে প্রয়োজনীয় সব তথ্য পূরণ করুন।", "warning");
+      return;
+    }
+
+    try {
+      const docRef = doc(db, "blood_requests", editingPublicReq.id);
+      await updateDoc(docRef, {
+        patientName: pubEditPatient.trim(),
+        bloodGroup: pubEditBloodGroup,
+        unitsNeeded: Number(pubEditUnits),
+        hospitalName: pubEditHospital.trim(),
+        phone: pubEditPhone.trim(),
+        details: pubEditDetails.trim(),
+        isUrgent: pubEditIsUrgent,
+        requiredDate: pubEditRequiredDate.trim(),
+        division: pubEditDivision,
+        district: pubEditDistrict,
+        upazila: pubEditUpazila
+      });
+      showToast("আবেদন সফলভাবে আপডেট করা হয়েছে।", "success");
+      setEditingPublicReq(null);
+    } catch (err) {
+      console.error(err);
+      showToast("আপডেট করতে সমস্যা হয়েছে।", "error");
+    }
+  };
+
+  // Delete Public Blood Request from Dashboard
+  const handleDeletePublicReq = async (id: string) => {
+    if (!confirm("আপনি কি নিশ্চিতভাবে এই রক্তের আবেদনটি মুছে ফেলতে চান?")) return;
+    try {
+      await deleteDoc(doc(db, "blood_requests", id));
+      showToast("আবেদনটি সফলভাবে মুছে ফেলা হয়েছে।", "success");
+    } catch (err) {
+      console.error(err);
+      showToast("মুছে ফেলতে ত্রুটি ঘটেছে।", "error");
+    }
+  };
+
+  // Submit Completion Details (Done) from Dashboard
+  const handleCompletePublicReq = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!donePublicReq?.id) return;
+    if (!pubDoneDonorName.trim() || !pubDoneDonorPhone.trim() || !pubDoneDate) {
+      showToast("দয়া করে রক্তদাতার নাম, মোবাইল নম্বর এবং তারিখ প্রদান করুন।", "warning");
+      return;
+    }
+
+    setPubDoneSubmitting(true);
+    try {
+      const docRef = doc(db, "blood_requests", donePublicReq.id);
+      await updateDoc(docRef, { status: "completed" });
+
+      await addDoc(collection(db, "completed_donations"), {
+        requestId: donePublicReq.id,
+        patientName: donePublicReq.patientName || "অজ্ঞাত রোগী",
+        bloodGroup: donePublicReq.bloodGroup || "A+",
+        hospitalName: donePublicReq.hospitalName || "অজ্ঞাত হাসপাতাল",
+        district: donePublicReq.district || "",
+        upazila: donePublicReq.upazila || "",
+        donorName: pubDoneDonorName.trim(),
+        donorPhone: pubDoneDonorPhone.trim(),
+        donationDate: pubDoneDate,
+        notes: pubDoneNotes.trim(),
+        completedByUserId: user?.uid || "guest",
+        createdAt: Timestamp.now()
+      });
+
+      // Update donor profile lock if phone matches a user
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("phone", "==", pubDoneDonorPhone.trim()));
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        const donorUserDoc = querySnapshot.docs[0];
+        const donorUserId = donorUserDoc.id;
+        const donorUserData = donorUserDoc.data();
+        
+        // 3 months lock = 90 days from donation date
+        const lockExpiryDate = new Date(pubDoneDate);
+        lockExpiryDate.setDate(lockExpiryDate.getDate() + 90);
+        
+        await updateDoc(doc(db, "users", donorUserId), {
+          bloodDonationLockedUntil: Timestamp.fromDate(lockExpiryDate),
+          timesDonated: (donorUserData.timesDonated || 0) + 1,
+          lastDonationDate: Timestamp.fromDate(new Date(pubDoneDate))
+        });
+
+        // Also update their donor_post if they have one!
+        const postsRef = collection(db, "donor_posts");
+        const postQ = query(postsRef, where("userId", "==", donorUserId));
+        const postSnap = await getDocs(postQ);
+        if (!postSnap.empty) {
+          await updateDoc(doc(db, "donor_posts", postSnap.docs[0].id), {
+            bloodDonationLockedUntil: Timestamp.fromDate(lockExpiryDate),
+            paused: true,
+            timesDonated: (donorUserData.timesDonated || 0) + 1,
+            lastDonatedAt: new Date(pubDoneDate).toLocaleDateString("bn-BD")
+          });
+        }
+      }
+
+      showToast("রক্তের আবেদনটি সফলভাবে সম্পন্ন হিসেবে চিহ্নিত করা হয়েছে এবং ইতিহাস সংরক্ষণ করা হয়েছে।", "success");
+      setDonePublicReq(null);
+    } catch (err) {
+      console.error(err);
+      showToast("সম্পন্ন করতে ত্রুটি ঘটেছে।", "error");
+    } finally {
+      setPubDoneSubmitting(false);
     }
   };
 
@@ -489,6 +661,16 @@ export const RequestsDashboardPage: React.FC = () => {
             }`}
           >
             আমার রক্তদাতা পোস্ট 🩸
+          </button>
+          <button
+            onClick={() => setActiveTab("public_requests")}
+            className={`py-2 px-4 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              activeTab === "public_requests"
+                ? "bg-white text-slate-800 shadow-sm"
+                : "text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            আমার জরুরি রক্তের আবেদনসমূহ 🚨
           </button>
         </div>
       </div>
@@ -636,7 +818,7 @@ export const RequestsDashboardPage: React.FC = () => {
             </div>
           )}
         </div>
-      ) : (
+      ) : activeTab === "donor_post" ? (
         /* MY DONOR POST PANEL */
         <div className="space-y-6">
           {/* COOLDOWN / LOCK COMPONENT */}
@@ -650,7 +832,7 @@ export const RequestsDashboardPage: React.FC = () => {
                 <div>
                   <h3 className="font-extrabold text-base md:text-lg">রক্তদাতা পোস্ট এবং নতুন আবেদন লকড রয়েছে 🛡️</h3>
                   <p className="text-white/80 text-[11px] md:text-xs font-semibold leading-relaxed mt-0.5">
-                    রক্ত সুরক্ষার্থে সম্প্রতি রক্তদানের ৪ মাসের জন্য আপনার রক্তদাতার পোস্ট ও নতুন আবেদন সাময়িকভাবে লক করা হয়েছে।
+                    রক্ত সুরক্ষার্থে সম্প্রতি রক্তদানের ৩ মাসের জন্য আপনার রক্তদাতার পোস্ট ও নতুন আবেদন সাময়িকভাবে লক করা হয়েছে।
                   </p>
                 </div>
               </div>
@@ -801,7 +983,7 @@ export const RequestsDashboardPage: React.FC = () => {
                     disabled
                     className="flex-1 py-2.5 bg-slate-100 text-slate-400 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-not-allowed border"
                   >
-                    <Lock className="w-4 h-4" /> ৪ মাসের জন্য লকড রয়েছে
+                    <Lock className="w-4 h-4" /> ৩ মাসের জন্য লকড রয়েছে
                   </button>
                 ) : (
                   <button
@@ -1053,6 +1235,132 @@ export const RequestsDashboardPage: React.FC = () => {
             </motion.div>
           )}
         </div>
+      ) : (
+        /* PUBLIC REQUESTS MANAGEMENT PANEL */
+        <div className="space-y-4">
+          {loadingPublicRequests ? (
+            <div className="text-center py-12 bg-white rounded-3xl border">
+              <div className="w-8 h-8 border-4 border-red-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+              <p className="text-slate-400 text-xs font-semibold">আপনার রক্তের আবেদনসমূহ লোড হচ্ছে...</p>
+            </div>
+          ) : myPublicRequests.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-3xl border border-slate-100 p-8">
+              <AlertTriangle className="w-12 h-12 text-slate-300 mx-auto mb-3 animate-pulse" />
+              <p className="text-slate-600 font-extrabold text-sm">কোন রক্তের আবেদন পাওয়া যায়নি</p>
+              <p className="text-slate-400 text-xs mt-1 font-medium">আপনি হোমে রক্তের আবেদন তৈরি করলে তা এখানে তালিকাভুক্ত থাকবে।</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {myPublicRequests.map((req) => (
+                <div 
+                  key={req.id} 
+                  className={`bg-white p-5 rounded-3xl border border-slate-100 shadow-sm transition-all flex flex-col justify-between ${
+                    req.status === "completed" ? "bg-slate-50/55 border-emerald-100" : ""
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-3 mb-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">রোগীর নাম</span>
+                          {req.isUrgent && (
+                            <span className="text-[8px] font-black text-red-600 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded uppercase tracking-wider animate-pulse">জরুরি</span>
+                          )}
+                        </div>
+                        <h4 className="font-extrabold text-slate-800 text-sm">{req.patientName}</h4>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          সময়/তারিখ: <strong className="text-red-500 font-bold">{req.requiredDate}</strong>
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="w-10 h-10 flex items-center justify-center bg-red-500 text-white rounded-full text-base font-black shadow-lg shadow-red-500/20">
+                          {req.bloodGroup}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2.5 text-xs text-slate-600 border-t pt-3 border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span>হাসপাতাল: <strong className="text-slate-700">{req.hospitalName}</strong></span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span>ঠিকানা: <strong className="text-slate-700">{req.upazila}, {req.district}</strong></span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Phone className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span>মোবাইল: <strong className="text-slate-700 font-mono">{req.phone}</strong></span>
+                      </div>
+                      {req.details && (
+                        <div className="p-2.5 bg-slate-50 border rounded-xl mt-1 text-[11px] text-slate-500 italic font-semibold">
+                          "{req.details}"
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-5 border-t pt-4 border-slate-50 flex items-center justify-between gap-3">
+                    <div>
+                      {req.status === "completed" ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-full font-black uppercase">
+                          <Check className="w-3.5 h-3.5" /> রক্তদান সম্পন্ন
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 bg-amber-50 border border-amber-100 px-2.5 py-1 rounded-full font-black uppercase">
+                          <Clock className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '4s' }} /> সচল (Open)
+                        </span>
+                      )}
+                    </div>
+
+                    {req.status !== "completed" && (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingPublicReq(req);
+                            setPubEditPatient(req.patientName || "");
+                            setPubEditBloodGroup(req.bloodGroup || "A+");
+                            setPubEditUnits(req.unitsNeeded || 1);
+                            setPubEditHospital(req.hospitalName || "");
+                            setPubEditPhone(req.phone || "");
+                            setPubEditDetails(req.details || "");
+                            setPubEditIsUrgent(req.isUrgent ?? true);
+                            setPubEditRequiredDate(req.requiredDate || "");
+                            setPubEditDivision(req.division || "");
+                            setPubEditDistrict(req.district || "");
+                            setPubEditUpazila(req.upazila || "");
+                          }}
+                          className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-slate-800 font-extrabold text-[11px] rounded-xl border transition-colors cursor-pointer"
+                        >
+                          এডিট করুন
+                        </button>
+                        <button
+                          onClick={() => {
+                            setPubDoneDonorName("");
+                            setPubDoneDonorPhone("");
+                            setPubDoneNotes("");
+                            setDonePublicReq(req);
+                          }}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] rounded-xl transition-colors cursor-pointer"
+                        >
+                          সম্পন্ন (Done)
+                        </button>
+                        <button
+                          onClick={() => handleDeletePublicReq(req.id)}
+                          className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-500 rounded-xl transition-colors cursor-pointer border border-rose-100"
+                          title="মুছে ফেলুন"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* CONFIRM RECIPIENT DONATION DETAILS MODAL (রক্ত দিয়েছি) */}
@@ -1073,7 +1381,7 @@ export const RequestsDashboardPage: React.FC = () => {
             </div>
 
             <p className="text-[11px] text-slate-500 leading-relaxed font-semibold">
-              রক্তদান সম্পন্ন করার তথ্যটি এখানে যোগ করুন। তথ্যটি নিশ্চিত করার সাথে সাথে আপনার অ্যাকাউন্ট এবং সচলতা **আগামী ৪ মাসের জন্য স্বয়ংক্রিয়ভাবে লক হয়ে যাবে** এবং কাউন্টডাউন শুরু হবে।
+              রক্তদান সম্পন্ন করার তথ্যটি এখানে যোগ করুন। তথ্যটি নিশ্চিত করার সাথে সাথে আপনার অ্যাকাউন্ট এবং সচলতা **আগামী ৩ মাসের জন্য স্বয়ংক্রিয়ভাবে লক হয়ে যাবে** এবং কাউন্টডাউন শুরু হবে।
             </p>
 
             <form onSubmit={handleConfirmDonation} className="space-y-4 text-xs font-semibold">
@@ -1127,6 +1435,277 @@ export const RequestsDashboardPage: React.FC = () => {
               >
                 <Check className="w-4 h-4" /> রক্তদান নিশ্চিত করুন
               </button>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* EDIT PUBLIC REQUEST DIALOG (FROM DASHBOARD) */}
+      {editingPublicReq && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-3xl p-6 max-w-md w-full border shadow-2xl overflow-y-auto max-h-[90vh] space-y-4 text-xs font-semibold"
+          >
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="font-extrabold text-slate-800 text-base">রক্তের আবেদন পরিবর্তন করুন 📝</h3>
+              <button onClick={() => setEditingPublicReq(null)} className="text-gray-400 hover:text-gray-600 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdatePublicReq} className="space-y-4">
+              <div>
+                <label className="block text-slate-500 mb-1">রোগীর নাম <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  required
+                  placeholder="যেমন: জনাব রহমান"
+                  value={pubEditPatient}
+                  onChange={(e) => setPubEditPatient(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-500 mb-1">প্রয়োজনীয় রক্তের গ্রুপ</label>
+                  <select
+                    value={pubEditBloodGroup}
+                    onChange={(e) => setPubEditBloodGroup(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                  >
+                    {["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"].map((g) => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-500 mb-1">কত ব্যাগ প্রয়োজন? <span className="text-red-500">*</span></label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    value={pubEditUnits}
+                    onChange={(e) => setPubEditUnits(Number(e.target.value))}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">হাসপাতালের নাম <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  required
+                  placeholder="যেমন: ঢাকা মেডিকেল কলেজ হাসপাতাল"
+                  value={pubEditHospital}
+                  onChange={(e) => setPubEditHospital(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">যোগাযোগের মোবাইল নম্বর <span className="text-red-500">*</span></label>
+                <input
+                  type="tel"
+                  required
+                  placeholder="যেমন: 017XXXXXXXX"
+                  value={pubEditPhone}
+                  onChange={(e) => setPubEditPhone(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">রক্তদানের সময় ও তারিখ <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  required
+                  placeholder="যেমন: আগামীকাল সকাল ১০টা, বা ২৫ই জুলাই"
+                  value={pubEditRequiredDate}
+                  onChange={(e) => setPubEditRequiredDate(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-slate-500 mb-1">বিভাগ <span className="text-red-500">*</span></label>
+                  <select
+                    value={pubEditDivision}
+                    onChange={(e) => { setPubEditDivision(e.target.value); setPubEditDistrict(""); setPubEditUpazila(""); }}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-[11px]"
+                  >
+                    <option value="">বাছাই</option>
+                    {bangladeshLocations.map((d) => (
+                      <option key={d.name} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-500 mb-1">জেলা <span className="text-red-500">*</span></label>
+                  <select
+                    value={pubEditDistrict}
+                    disabled={!pubEditDivision}
+                    onChange={(e) => { setPubEditDistrict(e.target.value); setPubEditUpazila(""); }}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 disabled:bg-slate-100 rounded-xl font-semibold text-[11px]"
+                  >
+                    <option value="">বাছাই</option>
+                    {(bangladeshLocations.find((d) => d.name === pubEditDivision)?.districts || []).map((d) => (
+                      <option key={d.name} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-500 mb-1">উপজেলা <span className="text-red-500">*</span></label>
+                  <select
+                    value={pubEditUpazila}
+                    disabled={!pubEditDistrict}
+                    onChange={(e) => setPubEditUpazila(e.target.value)}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 disabled:bg-slate-100 rounded-xl font-semibold text-[11px]"
+                  >
+                    <option value="">বাছাই</option>
+                    {((bangladeshLocations.find((d) => d.name === pubEditDivision)?.districts || []).find((d) => d.name === pubEditDistrict)?.upazilas || []).map((u) => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">অতিরিক্ত বিবরণ (ঐচ্ছিক)</label>
+                <textarea
+                  placeholder="রোগীর অবস্থা বা অতিরিক্ত যোগাযোগের তথ্য লিখুন..."
+                  value={pubEditDetails}
+                  onChange={(e) => setPubEditDetails(e.target.value)}
+                  rows={2}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold"
+                />
+              </div>
+
+              <label className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={pubEditIsUrgent}
+                  onChange={(e) => setPubEditIsUrgent(e.target.checked)}
+                  className="w-4 h-4 text-red-500 focus:ring-red-500 rounded"
+                />
+                <span className="text-slate-700 text-xs">এটি একটি জরুরি রক্তের আবেদন</span>
+              </label>
+
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  className="flex-1 py-3 bg-red-500 hover:bg-red-600 text-white font-extrabold rounded-xl shadow-lg shadow-red-500/10 transition-all cursor-pointer"
+                >
+                  আপডেট সংরক্ষণ করুন
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingPublicReq(null)}
+                  className="py-3 px-5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-xl transition-all cursor-pointer"
+                >
+                  বাতিল
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* DONE PUBLIC REQUEST DIALOG (FROM DASHBOARD) */}
+      {donePublicReq && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-3xl max-w-md w-full border shadow-2xl overflow-hidden flex flex-col text-xs font-semibold"
+          >
+            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white p-5 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-white animate-pulse" />
+                <h3 className="font-extrabold text-base">রক্তদান সফল সমাপ্তি ফরম 🩸</h3>
+              </div>
+              <button 
+                onClick={() => setDonePublicReq(null)} 
+                className="text-white/80 hover:text-white bg-black/10 hover:bg-black/20 p-1.5 rounded-full transition-all cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCompletePublicReq} className="p-6 space-y-4 text-slate-700">
+              <p className="text-[11px] text-slate-500 leading-relaxed mb-2">
+                এই আবেদনটি সফলভাবে সম্পন্ন করার জন্য অনুগ্রহ করে রক্তদাতার সঠিক তথ্যগুলো প্রদান করুন। যদি রক্তদাতার ফোন নম্বরটি আমাদের প্ল্যাটফর্মে নিবন্ধিত কোনো ইউজার হয়ে থাকে, তবে তার প্রোফাইলে ১টি রক্তদান কাউন্ট যুক্ত হবে এবং পরবর্তী ৯০ দিনের জন্য রক্তদানে বিরতি সময়কাল প্রযোজ্য হবে।
+              </p>
+
+              <div>
+                <label className="block text-slate-500 mb-1">রক্তদাতার নাম <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  required
+                  placeholder="যেমন: শরিফুল ইসলাম"
+                  value={pubDoneDonorName}
+                  onChange={(e) => setPubDoneDonorName(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">রক্তদাতার মোবাইল নম্বর <span className="text-red-500">*</span></label>
+                <input
+                  type="tel"
+                  required
+                  placeholder="যেমন: 017XXXXXXXX"
+                  value={pubDoneDonorPhone}
+                  onChange={(e) => setPubDoneDonorPhone(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">রক্তদানের তারিখ <span className="text-red-500">*</span></label>
+                <input
+                  type="date"
+                  required
+                  value={pubDoneDate}
+                  onChange={(e) => setPubDoneDate(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">মন্তব্য (ঐচ্ছিক)</label>
+                <textarea
+                  placeholder="রক্তদান সংক্রান্ত কোনো অতিরিক্ত তথ্য বা অভিজ্ঞতা..."
+                  value={pubDoneNotes}
+                  onChange={(e) => setPubDoneNotes(e.target.value)}
+                  rows={2}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800"
+                />
+              </div>
+
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="submit"
+                  disabled={pubDoneSubmitting}
+                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer text-xs"
+                >
+                  {pubDoneSubmitting ? "সংরক্ষণ হচ্ছে..." : "রক্তদান সম্পন্ন করুন 🩸"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDonePublicReq(null)}
+                  className="px-5 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all cursor-pointer"
+                >
+                  বাতিল
+                </button>
+              </div>
             </form>
           </motion.div>
         </div>

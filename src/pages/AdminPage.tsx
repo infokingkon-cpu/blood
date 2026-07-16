@@ -36,14 +36,16 @@ import {
   AlertOctagon,
   Wrench,
   ShieldAlert,
-  User
+  User,
+  CheckCircle,
+  Unlock
 } from "lucide-react";
 import { motion } from "motion/react";
 import { getApiUrl } from "../utils/api";
 
 export const AdminPage: React.FC = () => {
   const { user, showToast, setView, systemSettings, logout } = useApp();
-  const [activeTab, setActiveTab] = useState<"stats" | "users" | "requests" | "directory" | "reports" | "feedback" | "support" | "settings" | "logs">("stats");
+  const [activeTab, setActiveTab] = useState<"stats" | "users" | "requests" | "directory" | "reports" | "feedback" | "support" | "settings" | "logs" | "completed_donations">("stats");
   
   // Checking admin permission
   if (!user?.isAdmin) {
@@ -80,12 +82,15 @@ export const AdminPage: React.FC = () => {
 
   const [usersList, setUsersList] = useState<any[]>([]);
   const [requestsList, setRequestsList] = useState<any[]>([]);
+  const [donorPostsList, setDonorPostsList] = useState<any[]>([]);
+  const [requestSubTab, setRequestSubTab] = useState<"blood" | "donor">("blood");
   const [hospitalsList, setHospitalsList] = useState<any[]>([]);
   const [volunteersList, setVolunteersList] = useState<any[]>([]);
   const [reportsList, setReportsList] = useState<any[]>([]);
   const [feedbackList, setFeedbackList] = useState<any[]>([]);
   const [supportList, setSupportList] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [completedDonationsList, setCompletedDonationsList] = useState<any[]>([]);
   
   const [loading, setLoading] = useState(false);
   
@@ -196,6 +201,13 @@ export const AdminPage: React.FC = () => {
         list.push({ id: doc.id, ...doc.data() });
       });
       setRequestsList(list);
+
+      const donorSnap = await getDocs(query(collection(db, "donor_posts"), orderBy("createdAt", "desc")));
+      const donorList: any[] = [];
+      donorSnap.forEach((doc) => {
+        donorList.push({ id: doc.id, ...doc.data() });
+      });
+      setDonorPostsList(donorList);
     } catch (err) {
       console.error(err);
     } finally {
@@ -281,6 +293,35 @@ export const AdminPage: React.FC = () => {
     }
   };
 
+  const loadCompletedDonations = async () => {
+    setLoading(true);
+    try {
+      const snap = await getDocs(query(collection(db, "completed_donations"), orderBy("createdAt", "desc")));
+      const list: any[] = [];
+      snap.forEach((doc) => {
+        list.push({ id: doc.id, ...doc.data() });
+      });
+      setCompletedDonationsList(list);
+    } catch (err) {
+      console.error(err);
+      showToast("রক্তদান সম্পন্ন তালিকা লোড করতে সমস্যা হয়েছে।", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteCompletedDonation = async (id: string) => {
+    if (!window.confirm("আপনি কি নিশ্চিতভাবে এই সম্পন্ন রক্তদান রেকর্ডটি মুছে ফেলতে চান? এটি ডিলিট করলে রক্তদাতার লক রিমুভ হবে না।")) return;
+    try {
+      await deleteDoc(doc(db, "completed_donations", id));
+      showToast("সম্পন্ন রক্তদান রেকর্ড মুছে ফেলা হয়েছে।", "success");
+      loadCompletedDonations();
+    } catch (err) {
+      console.error(err);
+      showToast("রেকর্ড মুছে ফেলতে ব্যর্থ হয়েছে।", "error");
+    }
+  };
+
   useEffect(() => {
     loadStats();
     if (activeTab === "users") loadUsers();
@@ -293,6 +334,7 @@ export const AdminPage: React.FC = () => {
     if (activeTab === "feedback") loadFeedback();
     if (activeTab === "support") loadSupport();
     if (activeTab === "logs") loadLogs();
+    if (activeTab === "completed_donations") loadCompletedDonations();
   }, [activeTab]);
 
   // Log admin action helper
@@ -320,6 +362,22 @@ export const AdminPage: React.FC = () => {
       loadUsers();
     } catch (err) {
       showToast("অ্যাকশন ব্যর্থ হয়েছে। দয়া করে আবার চেষ্টা করুন।", "error");
+    }
+  };
+
+  // User Actions: Unlock Donation Lock (3-month lockout removal)
+  const handleUnlockUserDonation = async (userId: string, fullName: string) => {
+    if (!window.confirm(`আপনি কি নিশ্চিতভাবে ${fullName} এর ৩ মাসের রক্তদান লকটি এখনই খুলে দিতে চান? লক খুলে দিলে তিনি অবিলম্বে আবার রক্ত দিতে পারবেন এবং নতুন পোস্ট বা রিকোয়েস্ট তৈরি করতে পারবেন।`)) return;
+    try {
+      await updateDoc(doc(db, "users", userId), { 
+        bloodDonationLockedUntil: null 
+      });
+      showToast(`${fullName} এর রক্তদান লক সফলভাবে খুলে দেওয়া হয়েছে।`, "success");
+      await logAdminAction("Unlock Donation Cooldown", userId, `Removed blood donation lock and cooldown timer early for ${fullName}`);
+      loadUsers();
+    } catch (err) {
+      console.error(err);
+      showToast("লক খুলতে ব্যর্থ হয়েছে।", "error");
     }
   };
 
@@ -481,6 +539,25 @@ export const AdminPage: React.FC = () => {
           await deleteDoc(doc(db, "blood_requests", requestId));
           showToast("রক্তের আবেদনটি সফলভাবে ডিলেট করা হয়েছে।", "success");
           await logAdminAction("Delete Blood Request", "", `Deleted blood request for: ${patientName} (${requestId})`);
+          loadRequests();
+          loadStats();
+        } catch (err) {
+          showToast("ডিলেট করতে সমস্যা হয়েছে।", "error");
+        }
+      }
+    );
+  };
+
+  // Delete Donor Post
+  const handleDeleteDonorPost = (postId: string, donorName: string) => {
+    triggerConfirm(
+      "রক্তদাতা পোস্ট ডিলেট করুন",
+      `আপনি কি নিশ্চিতভাবে এই রক্তদাতা পোস্টটি (দাতা: ${donorName}) ডিলেট করতে চান?`,
+      async () => {
+        try {
+          await deleteDoc(doc(db, "donor_posts", postId));
+          showToast("রক্তদাতা পোস্টটি সফলভাবে ডিলেট করা হয়েছে।", "success");
+          await logAdminAction("Delete Donor Post", "", `Deleted donor post for: ${donorName} (${postId})`);
           loadRequests();
           loadStats();
         } catch (err) {
@@ -687,6 +764,14 @@ export const AdminPage: React.FC = () => {
           }`}
         >
           <Heart className="w-4 h-4 inline mr-1 animate-pulse" /> রক্তের আবেদনসমূহ ({stats.totalRequests})
+        </button>
+        <button
+          onClick={() => setActiveTab("completed_donations")}
+          className={`py-2 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === "completed_donations" ? "bg-red-500 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+          }`}
+        >
+          <CheckCircle className="w-4 h-4 inline mr-1" /> সম্পন্ন রক্তদান সমূহ ({completedDonationsList.length})
         </button>
         <button
           onClick={() => setActiveTab("directory")}
@@ -898,11 +983,16 @@ export const AdminPage: React.FC = () => {
                         </span>
                       </td>
                       <td className="p-4">{u.upazila}, {u.district}</td>
-                      <td className="p-4">
+                      <td className="p-4 space-y-1">
                         {u.blocked ? (
-                          <span className="text-red-500 bg-red-50 px-2 py-0.5 rounded border border-red-100 text-[10px] font-bold">অ্যাকাউন্ট ব্লকড</span>
+                          <span className="text-red-500 bg-red-50 px-2 py-0.5 rounded border border-red-100 text-[10px] font-bold block text-center">অ্যাকাউন্ট ব্লকড</span>
                         ) : (
-                          <span className="text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 text-[10px] font-bold">সক্রিয়</span>
+                          <span className="text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 text-[10px] font-bold block text-center">সক্রিয়</span>
+                        )}
+                        {u.bloodDonationLockedUntil && u.bloodDonationLockedUntil.toDate && new Date(u.bloodDonationLockedUntil.toDate()) > new Date() && (
+                          <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 text-[10px] font-bold block text-center">
+                            লকড: {new Date(u.bloodDonationLockedUntil.toDate()).toLocaleDateString("bn-BD")}
+                          </span>
                         )}
                       </td>
                       <td className="p-4">
@@ -920,6 +1010,14 @@ export const AdminPage: React.FC = () => {
                               className="py-1 px-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded border border-rose-100 font-bold text-[10px] cursor-pointer"
                             >
                               ব্লক করুন
+                            </button>
+                          )}
+                          {u.bloodDonationLockedUntil && u.bloodDonationLockedUntil.toDate && new Date(u.bloodDonationLockedUntil.toDate()) > new Date() && (
+                            <button
+                              onClick={() => handleUnlockUserDonation(u.id, u.fullName)}
+                              className="py-1 px-2 bg-amber-500 hover:bg-amber-600 text-white rounded font-bold text-[10px] flex items-center gap-0.5 cursor-pointer"
+                            >
+                              <Unlock className="w-3 h-3" /> লক মুক্ত করুন
                             </button>
                           )}
                           <button
@@ -1056,68 +1154,151 @@ export const AdminPage: React.FC = () => {
       )}
 
       {activeTab === "requests" && (
-        /* BLOOD REQUESTS LIST FOR MODERATION */
-        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6 space-y-4">
-          <div className="flex justify-between items-center border-b pb-3 border-slate-100">
-            <h3 className="font-extrabold text-slate-800 text-sm">রক্তের আবেদনসমূহ ({requestsList.length})</h3>
+        /* REQUESTS & DONOR POSTS MODERATION */
+        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6 space-y-5">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b pb-3 border-slate-100">
+            <div className="space-y-2">
+              <h3 className="font-extrabold text-slate-800 text-sm flex items-center gap-2">আবেদন ও রিকোয়েস্ট ম্যানেজমেন্ট 📋</h3>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setRequestSubTab("blood")}
+                  className={`py-1 px-3 rounded-lg text-[11px] font-bold cursor-pointer transition-colors ${
+                    requestSubTab === "blood"
+                      ? "bg-red-500 text-white shadow-xs"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  রক্তের আবেদনসমূহ ({requestsList.length})
+                </button>
+                <button
+                  onClick={() => setRequestSubTab("donor")}
+                  className={`py-1 px-3 rounded-lg text-[11px] font-bold cursor-pointer transition-colors ${
+                    requestSubTab === "donor"
+                      ? "bg-red-500 text-white shadow-xs"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  রক্তদাতাদের পোস্টসমূহ ({donorPostsList.length})
+                </button>
+              </div>
+            </div>
             <button
               onClick={loadRequests}
-              className="py-1 px-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-bold border border-slate-200 cursor-pointer"
+              className="py-1 px-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-bold border border-slate-200 cursor-pointer self-end md:self-auto"
             >
-              রিফ্রেশ করুন
+              রিফ্রেশ করুন 🔄
             </button>
           </div>
 
-          {requestsList.length === 0 ? (
-            <p className="text-slate-400 text-center py-8">কোন রক্তের আবেদন পাওয়া যায়নি।</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-slate-100 bg-slate-50 text-slate-400 font-bold uppercase tracking-wider">
-                    <th className="p-4">রোগীর নাম</th>
-                    <th className="p-4">গ্রুপ</th>
-                    <th className="p-4">পরিমাণ (ব্যাগ)</th>
-                    <th className="p-4">হাসপাতাল ও জেলা</th>
-                    <th className="p-4">মোবাইল নম্বর</th>
-                    <th className="p-4 text-center">অ্যাকশন</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50 text-slate-700 font-medium">
-                  {requestsList.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50/50">
-                      <td className="p-4">
-                        <div>
-                          <span className="font-bold text-slate-800">{item.patientName}</span>
-                          <span className="text-[10px] text-slate-400 block">রোগ: {item.disease || "উল্লেখ নেই"}</span>
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <span className="inline-flex py-0.5 px-2 bg-red-100 text-red-700 rounded-full font-bold">
-                          {item.bloodGroup}
-                        </span>
-                      </td>
-                      <td className="p-4 font-bold">{item.units || 1} ব্যাগ</td>
-                      <td className="p-4">
-                        <div>
-                          <span className="font-bold text-slate-800">{item.hospitalName}</span>
-                          <span className="text-[10px] text-slate-400 block">{item.area}, {item.district}</span>
-                        </div>
-                      </td>
-                      <td className="p-4 font-bold">{item.contactPhone}</td>
-                      <td className="p-4 text-center">
-                        <button
-                          onClick={() => handleDeleteRequest(item.id, item.patientName)}
-                          className="py-1.5 px-3 bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 rounded-lg font-bold text-[10px] cursor-pointer"
-                        >
-                          ডিলেট আবেদন
-                        </button>
-                      </td>
+          {requestSubTab === "blood" ? (
+            requestsList.length === 0 ? (
+              <p className="text-slate-400 text-center py-8">কোন রক্তের আবেদন পাওয়া যায়নি।</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50 text-slate-400 font-bold uppercase tracking-wider">
+                      <th className="p-4">রোগীর নাম</th>
+                      <th className="p-4">গ্রুপ</th>
+                      <th className="p-4">পরিমাণ (ব্যাগ)</th>
+                      <th className="p-4">হাসপাতাল ও জেলা</th>
+                      <th className="p-4">মোবাইল নম্বর</th>
+                      <th className="p-4 text-center">অ্যাকশন</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 text-slate-700 font-medium">
+                    {requestsList.map((item) => (
+                      <tr key={item.id} className="hover:bg-slate-50/50">
+                        <td className="p-4">
+                          <div>
+                            <span className="font-bold text-slate-800">{item.patientName}</span>
+                            <span className="text-[10px] text-slate-400 block">রোগ: {item.disease || item.details || "উল্লেখ নেই"}</span>
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <span className="inline-flex py-0.5 px-2 bg-red-100 text-red-700 rounded-full font-bold">
+                            {item.bloodGroup}
+                          </span>
+                        </td>
+                        <td className="p-4 font-bold">{item.unitsNeeded || item.units || 1} ব্যাগ</td>
+                        <td className="p-4">
+                          <div>
+                            <span className="font-bold text-slate-800">{item.hospitalName}</span>
+                            <span className="text-[10px] text-slate-400 block">{item.upazila || item.area || ""}, {item.district}</span>
+                          </div>
+                        </td>
+                        <td className="p-4 font-bold">{item.phone || item.contactPhone}</td>
+                        <td className="p-4 text-center">
+                          <button
+                            onClick={() => handleDeleteRequest(item.id, item.patientName)}
+                            className="py-1.5 px-3 bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 rounded-lg font-bold text-[10px] cursor-pointer"
+                          >
+                            ডিলেট আবেদন
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          ) : (
+            donorPostsList.length === 0 ? (
+              <p className="text-slate-400 text-center py-8">কোন রক্তদাতা পোস্ট পাওয়া যায়নি।</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50 text-slate-400 font-bold uppercase tracking-wider">
+                      <th className="p-4">রক্তদাতার নাম</th>
+                      <th className="p-4">গ্রুপ</th>
+                      <th className="p-4">উপজেলা ও জেলা</th>
+                      <th className="p-4">মোবাইল নম্বর</th>
+                      <th className="p-4 text-center">অবস্থা</th>
+                      <th className="p-4 text-center">অ্যাকশন</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 text-slate-700 font-medium">
+                    {donorPostsList.map((item) => (
+                      <tr key={item.id} className="hover:bg-slate-50/50">
+                        <td className="p-4">
+                          <div>
+                            <span className="font-bold text-slate-800">{item.name}</span>
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <span className="inline-flex py-0.5 px-2 bg-red-100 text-red-700 rounded-full font-bold">
+                            {item.bloodGroup}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <div>
+                            <span className="text-slate-800 font-bold">{item.upazila}</span>
+                            <span className="text-[10px] text-slate-400 block">{item.district}</span>
+                          </div>
+                        </td>
+                        <td className="p-4 font-bold">{item.phone || item.mobile}</td>
+                        <td className="p-4 text-center">
+                          {item.paused ? (
+                            <span className="px-2 py-0.5 bg-amber-50 text-amber-600 border border-amber-100 rounded text-[10px] font-bold">নিষ্ক্রিয় (Paused)</span>
+                          ) : (
+                            <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded text-[10px] font-bold">সক্রিয় (Active)</span>
+                          )}
+                        </td>
+                        <td className="p-4 text-center">
+                          <button
+                            onClick={() => handleDeleteDonorPost(item.id, item.name)}
+                            className="py-1.5 px-3 bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 rounded-lg font-bold text-[10px] cursor-pointer"
+                          >
+                            ডিলেট পোস্ট
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
           )}
         </div>
       )}
@@ -1326,6 +1507,90 @@ export const AdminPage: React.FC = () => {
                       <td className="p-4 text-slate-600 font-sans font-medium">{log.details}</td>
                       <td className="p-4 font-sans text-slate-400">
                         {log.createdAt?.toDate ? new Date(log.createdAt.toDate()).toLocaleString("bn-BD") : "এখনই"}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "completed_donations" && (
+        /* COMPLETED DONATIONS REGISTER LOGS */
+        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6 space-y-5">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+            <div>
+              <h3 className="font-extrabold text-slate-800 text-sm flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-emerald-500 fill-emerald-50 text-emerald-500" /> সম্পন্ন রক্তদানের রেকর্ড বুক 📑
+              </h3>
+              <p className="text-[11px] text-slate-400 font-semibold mt-0.5 leading-relaxed">
+                প্লাটফর্মে নিবন্ধিত ইউজার এবং রোগীদের সাহায্যার্থে রক্তদান সম্পন্ন করার সকল সফল রেকর্ডের সম্পূর্ণ তথ্যপঞ্জি।
+              </p>
+            </div>
+            <button
+              onClick={loadCompletedDonations}
+              className="py-1.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+            >
+              রিফ্রেশ করুন 🔄
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50 text-slate-400 font-bold uppercase tracking-wider">
+                  <th className="p-4">রক্তदाता</th>
+                  <th className="p-4">রক্তদাতার ফোন নম্বর</th>
+                  <th className="p-4">রক্তগ্রহীতা</th>
+                  <th className="p-4">রক্তগ্রহীতার ফোন নম্বর</th>
+                  <th className="p-4">হাসপাতাল ও ঠিকানা</th>
+                  <th className="p-4">রক্তদানের তারিখ</th>
+                  <th className="p-4">অ্যাডমিন অ্যাকশন</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50 text-slate-700 font-semibold font-sans">
+                {completedDonationsList.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="text-center p-12 text-slate-400">
+                      <div className="space-y-2">
+                        <AlertTriangle className="w-8 h-8 text-slate-300 mx-auto" />
+                        <p className="font-extrabold text-xs">কোন সম্পন্ন রক্তদানের রেকর্ড পাওয়া যায়নি।</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  completedDonationsList.map((don) => (
+                    <tr key={don.id} className="hover:bg-slate-50/50">
+                      <td className="p-4 font-bold text-slate-800">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-ping" style={{ animationDuration: '3s' }} />
+                          <div>
+                            <span className="font-extrabold text-slate-800 block">{don.donorName || "অজানা দাতা"}</span>
+                            {don.donorId && (
+                              <span className="inline-block text-[8px] text-indigo-500 font-black uppercase font-mono mt-0.5 bg-indigo-50 px-1 border border-indigo-100 rounded">নিবন্ধিত দাতা</span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-4 font-mono font-medium text-slate-600">{don.donorPhone || don.donorMobile || "-"}</td>
+                      <td className="p-4 font-medium text-slate-700">{don.recipientName || don.patientName || "-"}</td>
+                      <td className="p-4 font-mono font-medium text-slate-600">{don.recipientPhone || don.phone || "-"}</td>
+                      <td className="p-4 text-slate-600 max-w-[200px] truncate leading-normal">
+                        <span className="font-bold text-slate-800 block text-[11px] truncate">{don.hospitalName || "-"}</span>
+                        <span className="text-[10px] text-slate-400 truncate block mt-0.5">{don.hospitalAddress || don.address || "-"}</span>
+                      </td>
+                      <td className="p-4 font-sans font-bold text-red-500">
+                        {don.donationDate || "অজানা তারিখ"}
+                      </td>
+                      <td className="p-4">
+                        <button
+                          onClick={() => handleDeleteCompletedDonation(don.id)}
+                          className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 rounded-lg border border-rose-100 transition-colors cursor-pointer text-[10px] font-black"
+                        >
+                          মুছে ফেলুন (Remove)
+                        </button>
                       </td>
                     </tr>
                   ))

@@ -38,7 +38,8 @@ import {
   Edit3,
   Trash2,
   MessageSquare,
-  Globe
+  Globe,
+  Settings
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -152,6 +153,32 @@ export const HomePage: React.FC = () => {
   // Emergency Blood Request Detail modal state
   const [showRequestDetailModal, setShowRequestDetailModal] = useState(false);
   const [selectedRequestDetail, setSelectedRequestDetail] = useState<any>(null);
+
+  // Emergency Blood Request Required Date State for creation
+  const [reqRequiredDate, setReqRequiredDate] = useState("");
+
+  // Edit Request State
+  const [showEditRequestModal, setShowEditRequestModal] = useState(false);
+  const [editingRequest, setEditingRequest] = useState<any>(null);
+  const [editPatientName, setEditPatientName] = useState("");
+  const [editBloodGroup, setEditBloodGroup] = useState("A+");
+  const [editUnits, setEditUnits] = useState(1);
+  const [editHospital, setEditHospital] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editDetails, setEditDetails] = useState("");
+  const [editIsUrgent, setEditIsUrgent] = useState(true);
+  const [editRequiredDate, setEditRequiredDate] = useState("");
+  const [editDivision, setEditDivision] = useState("");
+  const [editDistrict, setEditDistrict] = useState("");
+  const [editUpazila, setEditUpazila] = useState("");
+
+  // Complete Request Modal state
+  const [showCompleteRequestModal, setShowCompleteRequestModal] = useState(false);
+  const [doneDonorName, setDoneDonorName] = useState("");
+  const [doneDonorPhone, setDoneDonorPhone] = useState("");
+  const [doneDonationDate, setDoneDonationDate] = useState(new Date().toISOString().split('T')[0]);
+  const [doneNotes, setDoneNotes] = useState("");
+  const [submittingDone, setSubmittingDone] = useState(false);
 
   // Donation Completed feature state
   const [showDonationCompleteModal, setShowDonationCompleteModal] = useState(false);
@@ -280,6 +307,16 @@ export const HomePage: React.FC = () => {
     if (!user) return;
     try {
       const nextState = !user.availability;
+      if (nextState) {
+        if (user.bloodDonationLockedUntil) {
+          const lockTime = user.bloodDonationLockedUntil.toDate ? user.bloodDonationLockedUntil.toDate() : new Date(user.bloodDonationLockedUntil);
+          if (lockTime > new Date()) {
+            const remainingDays = Math.ceil((lockTime.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+            showToast(`দুঃখিত, আপনি ৩ মাসের লকড পিরিয়ডের মধ্যে আছেন। এই সময় আপনার স্ট্যাটাস সচল করতে পারবেন না। লক খোলার বাকি: ${remainingDays} দিন।`, "warning");
+            return;
+          }
+        }
+      }
       const userRef = doc(db, "users", user.uid);
       await updateDoc(userRef, { availability: nextState });
       await refreshUserProfile();
@@ -301,7 +338,7 @@ export const HomePage: React.FC = () => {
       showToast("দুঃখিত, বর্তমানে সিস্টেম এডমিন দ্বারা রক্তের আবেদন জমা বন্ধ রয়েছে।", "warning");
       return;
     }
-    if (!reqPatientName.trim() || !reqHospital.trim() || !reqPhone.trim() || !division || !district || !upazila) {
+    if (!reqPatientName.trim() || !reqHospital.trim() || !reqPhone.trim() || !division || !district || !upazila || !reqRequiredDate.trim()) {
       showToast("দয়া করে প্রয়োজনীয় সব তথ্য পূরণ করুন।", "warning");
       return;
     }
@@ -320,6 +357,7 @@ export const HomePage: React.FC = () => {
         upazila,
         userId: user?.uid || "guest",
         status: "open",
+        requiredDate: reqRequiredDate.trim(),
         createdAt: Timestamp.now()
       });
 
@@ -330,9 +368,143 @@ export const HomePage: React.FC = () => {
       setReqHospital("");
       setReqPhone("");
       setReqDetails("");
+      setReqRequiredDate("");
     } catch (err) {
       console.error(err);
       showToast("আবেদন পোস্ট করতে ত্রুটি ঘটেছে।", "error");
+    }
+  };
+
+  // Update Public Blood Request
+  const handleUpdatePublicRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingRequest?.id) return;
+    if (!editPatientName.trim() || !editHospital.trim() || !editPhone.trim() || !editDivision || !editDistrict || !editUpazila || !editRequiredDate.trim()) {
+      showToast("দয়া করে প্রয়োজনীয় সব তথ্য পূরণ করুন।", "warning");
+      return;
+    }
+
+    try {
+      const reqRef = doc(db, "blood_requests", editingRequest.id);
+      await updateDoc(reqRef, {
+        patientName: editPatientName.trim(),
+        bloodGroup: editBloodGroup,
+        unitsNeeded: Number(editUnits),
+        hospitalName: editHospital.trim(),
+        phone: editPhone.trim(),
+        details: editDetails.trim(),
+        isUrgent: editIsUrgent,
+        division: editDivision,
+        district: editDistrict,
+        upazila: editUpazila,
+        requiredDate: editRequiredDate.trim()
+      });
+
+      showToast("রক্তের আবেদনটি সফলভাবে আপডেট করা হয়েছে।", "success");
+      setShowEditRequestModal(false);
+      setEditingRequest(null);
+      setShowRequestDetailModal(false);
+      setSelectedRequestDetail(null);
+    } catch (err) {
+      console.error(err);
+      showToast("আবেদন আপডেট করতে ত্রুটি ঘটেছে।", "error");
+    }
+  };
+
+  // Delete Public Blood Request
+  const handleDeletePublicRequest = async (requestId: string) => {
+    try {
+      await deleteDoc(doc(db, "blood_requests", requestId));
+      showToast("রক্তের আবেদনটি সফলভাবে মুছে ফেলা হয়েছে।", "success");
+      setShowRequestDetailModal(false);
+      setSelectedRequestDetail(null);
+    } catch (err) {
+      console.error(err);
+      showToast("আবেদন মুছে ফেলতে ত্রুটি ঘটেছে।", "error");
+    }
+  };
+
+  // Submit Blood Request Completion Details (Done)
+  const handleSubmitCompleteRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRequestDetail?.id) return;
+    if (!doneDonorName.trim() || !doneDonorPhone.trim() || !doneDonationDate) {
+      showToast("অনুগ্রহ করে রক্তদাতার নাম, মোবাইল নম্বর এবং রক্তদানের তারিখ প্রদান করুন।", "warning");
+      return;
+    }
+
+    setSubmittingDone(true);
+    try {
+      const reqRef = doc(db, "blood_requests", selectedRequestDetail.id);
+      
+      // Update request status to completed
+      await updateDoc(reqRef, {
+        status: "completed"
+      });
+
+      // Add to completed_donations collection
+      await addDoc(collection(db, "completed_donations"), {
+        requestId: selectedRequestDetail.id,
+        patientName: selectedRequestDetail.patientName || "অজ্ঞাত রোগী",
+        bloodGroup: selectedRequestDetail.bloodGroup || "A+",
+        hospitalName: selectedRequestDetail.hospitalName || "অজ্ঞাত হাসপাতাল",
+        district: selectedRequestDetail.district || "",
+        upazila: selectedRequestDetail.upazila || "",
+        donorName: doneDonorName.trim(),
+        donorPhone: doneDonorPhone.trim(),
+        donationDate: doneDonationDate,
+        notes: doneNotes.trim(),
+        completedByUserId: user?.uid || "guest",
+        createdAt: Timestamp.now()
+      });
+
+      // Update donor profile lock if phone matches a user
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("phone", "==", doneDonorPhone.trim()));
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        const donorUserDoc = querySnapshot.docs[0];
+        const donorUserId = donorUserDoc.id;
+        const donorUserData = donorUserDoc.data();
+        
+        // 3 months lock = 90 days from donation date
+        const lockExpiryDate = new Date(doneDonationDate);
+        lockExpiryDate.setDate(lockExpiryDate.getDate() + 90);
+        
+        await updateDoc(doc(db, "users", donorUserId), {
+          bloodDonationLockedUntil: Timestamp.fromDate(lockExpiryDate),
+          timesDonated: (donorUserData.timesDonated || 0) + 1,
+          lastDonationDate: Timestamp.fromDate(new Date(doneDonationDate))
+        });
+
+        // Also update their donor_post if they have one!
+        const postsRef = collection(db, "donor_posts");
+        const postQ = query(postsRef, where("userId", "==", donorUserId));
+        const postSnap = await getDocs(postQ);
+        if (!postSnap.empty) {
+          await updateDoc(doc(db, "donor_posts", postSnap.docs[0].id), {
+            bloodDonationLockedUntil: Timestamp.fromDate(lockExpiryDate),
+            paused: true,
+            timesDonated: (donorUserData.timesDonated || 0) + 1,
+            lastDonatedAt: new Date(doneDonationDate).toLocaleDateString("bn-BD")
+          });
+        }
+      }
+
+      showToast("রক্তের আবেদনটি সফলভাবে 'সম্পন্ন' হিসেবে চিহ্নিত করা হয়েছে এবং ইতিহাস সংরক্ষণ করা হয়েছে।", "success");
+      
+      // Reset & close modals
+      setShowCompleteRequestModal(false);
+      setDoneDonorName("");
+      setDoneDonorPhone("");
+      setDoneNotes("");
+      setShowRequestDetailModal(false);
+      setSelectedRequestDetail(null);
+    } catch (err) {
+      console.error(err);
+      showToast("রক্তদান সম্পন্ন করতে ত্রুটি ঘটেছে।", "error");
+    } finally {
+      setSubmittingDone(false);
     }
   };
 
@@ -631,7 +803,7 @@ export const HomePage: React.FC = () => {
                 const lockTime = user.bloodDonationLockedUntil.toDate ? user.bloodDonationLockedUntil.toDate() : new Date(user.bloodDonationLockedUntil);
                 if (lockTime > new Date()) {
                   const remainingDays = Math.ceil((lockTime.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-                  showToast(`দুঃখিত, আপনি সম্প্রতি রক্ত দিয়েছেন। রক্তদানের ৪ মাসের মধ্যে আপনি রক্তের আবেদন করতে পারবেন না। লক খোলার বাকি: ${remainingDays} দিন।`, "warning");
+                  showToast(`দুঃখিত, আপনি সম্প্রতি রক্ত দিয়েছেন। রক্তদানের ৩ মাসের মধ্যে আপনি রক্তের আবেদন করতে পারবেন না। লক খোলার বাকি: ${remainingDays} দিন।`, "warning");
                   return;
                 }
               }
@@ -1044,6 +1216,18 @@ export const HomePage: React.FC = () => {
                   value={reqPhone}
                   onChange={(e) => setReqPhone(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">রক্তদানের সময় ও তারিখ <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  required
+                  placeholder="যেমন: আগামীকাল সকাল ১০টা, বা ২৫ই জুলাই"
+                  value={reqRequiredDate}
+                  onChange={(e) => setReqRequiredDate(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
                 />
               </div>
 
@@ -1925,6 +2109,60 @@ export const HomePage: React.FC = () => {
 
               {/* Action Contact bar */}
               <div className="pt-4 border-t space-y-3">
+                {user && (selectedRequestDetail.userId === user.uid || user.isAdmin) && (
+                  <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-2xl space-y-2.5">
+                    <p className="text-[11px] text-slate-800 font-extrabold flex items-center gap-1.5">
+                      <Settings className="w-4 h-4 text-slate-500" /> আপনার এই আবেদনটি পরিচালনা করুন:
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setEditingRequest(selectedRequestDetail);
+                          setEditPatientName(selectedRequestDetail.patientName || "");
+                          setEditBloodGroup(selectedRequestDetail.bloodGroup || "A+");
+                          setEditUnits(selectedRequestDetail.unitsNeeded || 1);
+                          setEditHospital(selectedRequestDetail.hospitalName || "");
+                          setEditPhone(selectedRequestDetail.phone || "");
+                          setEditDetails(selectedRequestDetail.details || "");
+                          setEditIsUrgent(selectedRequestDetail.isUrgent ?? true);
+                          setEditRequiredDate(selectedRequestDetail.requiredDate || "");
+                          setEditDivision(selectedRequestDetail.division || "");
+                          setEditDistrict(selectedRequestDetail.district || "");
+                          setEditUpazila(selectedRequestDetail.upazila || "");
+                          setShowEditRequestModal(true);
+                        }}
+                        className="flex-1 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-extrabold text-[11px] rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-indigo-100"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" /> এডিট করুন
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          if (confirm("আপনি কি নিশ্চিতভাবে এই রক্তের আবেদনটি মুছে ফেলতে চান?")) {
+                            handleDeletePublicRequest(selectedRequestDetail.id);
+                          }
+                        }}
+                        className="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 font-extrabold text-[11px] rounded-xl flex items-center justify-center gap-1 transition-colors border border-rose-100 cursor-pointer"
+                        title="মুছে ফেলুন"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> মুছুন
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setDoneDonorName("");
+                          setDoneDonorPhone("");
+                          setDoneNotes("");
+                          setShowCompleteRequestModal(true);
+                        }}
+                        className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm shadow-emerald-500/10"
+                      >
+                        <CheckCircle className="w-3.5 h-3.5" /> সম্পন্ন (Done)
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <a
                   href={`tel:${selectedRequestDetail.phone}`}
                   className="w-full py-3 bg-red-500 hover:bg-red-600 text-white font-extrabold rounded-2xl shadow-lg shadow-red-500/15 flex items-center justify-center gap-2 transition-all cursor-pointer text-xs uppercase"
@@ -1938,6 +2176,277 @@ export const HomePage: React.FC = () => {
               </div>
 
             </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* EDIT PUBLIC REQUEST MODAL */}
+      {showEditRequestModal && editingRequest && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-3xl p-6 max-w-md w-full border shadow-2xl overflow-y-auto max-h-[90vh]"
+          >
+            <div className="flex justify-between items-center mb-4 border-b pb-3">
+              <h3 className="font-extrabold text-slate-800 text-base">রক্তের আবেদন পরিবর্তন করুন 📝</h3>
+              <button onClick={() => { setShowEditRequestModal(false); setEditingRequest(null); }} className="text-gray-400 hover:text-gray-600 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdatePublicRequest} className="space-y-4 text-xs font-semibold">
+              <div>
+                <label className="block text-slate-500 mb-1">রোগীর নাম <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  required
+                  placeholder="যেমন: জনাব রহমান"
+                  value={editPatientName}
+                  onChange={(e) => setEditPatientName(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-500 mb-1">প্রয়োজনীয় রক্তের গ্রুপ</label>
+                  <select
+                    value={editBloodGroup}
+                    onChange={(e) => setEditBloodGroup(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                  >
+                    {["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"].map((g) => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-500 mb-1">কত ব্যাগ প্রয়োজন? <span className="text-red-500">*</span></label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    value={editUnits}
+                    onChange={(e) => setEditUnits(Number(e.target.value))}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">হাসপাতালের নাম <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  required
+                  placeholder="যেমন: ঢাকা মেডিকেল কলেজ হাসপাতাল"
+                  value={editHospital}
+                  onChange={(e) => setEditHospital(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">যোগাযোগের মোবাইল নম্বর <span className="text-red-500">*</span></label>
+                <input
+                  type="tel"
+                  required
+                  placeholder="যেমন: 017XXXXXXXX"
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">রক্তদানের সময় ও তারিখ <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  required
+                  placeholder="যেমন: আগামীকাল সকাল ১০টা, বা ২৫ই জুলাই"
+                  value={editRequiredDate}
+                  onChange={(e) => setEditRequiredDate(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-slate-500 mb-1">বিভাগ <span className="text-red-500">*</span></label>
+                  <select
+                    value={editDivision}
+                    onChange={(e) => { setEditDivision(e.target.value); setEditDistrict(""); setEditUpazila(""); }}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold"
+                  >
+                    <option value="">বাছাই</option>
+                    {bangladeshLocations.map((d) => (
+                      <option key={d.name} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-500 mb-1">জেলা <span className="text-red-500">*</span></label>
+                  <select
+                    value={editDistrict}
+                    disabled={!editDivision}
+                    onChange={(e) => { setEditDistrict(e.target.value); setEditUpazila(""); }}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 disabled:bg-slate-100 rounded-xl font-semibold"
+                  >
+                    <option value="">বাছাই</option>
+                    {(bangladeshLocations.find((d) => d.name === editDivision)?.districts || []).map((d) => (
+                      <option key={d.name} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-500 mb-1">উপজেলা <span className="text-red-500">*</span></label>
+                  <select
+                    value={editUpazila}
+                    disabled={!editDistrict}
+                    onChange={(e) => setEditUpazila(e.target.value)}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 disabled:bg-slate-100 rounded-xl font-semibold"
+                  >
+                    <option value="">বাছাই</option>
+                    {((bangladeshLocations.find((d) => d.name === editDivision)?.districts || []).find((d) => d.name === editDistrict)?.upazilas || []).map((u) => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">অতিরিক্ত বিবরণ (ঐচ্ছিক)</label>
+                <textarea
+                  placeholder="রোগীর অবস্থা বা অতিরিক্ত যোগাযোগের তথ্য লিখুন..."
+                  value={editDetails}
+                  onChange={(e) => setEditDetails(e.target.value)}
+                  rows={2}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold"
+                />
+              </div>
+
+              <label className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editIsUrgent}
+                  onChange={(e) => setEditIsUrgent(e.target.checked)}
+                  className="w-4 h-4 text-red-500 focus:ring-red-500 rounded"
+                />
+                <span className="text-slate-700 text-xs">এটি একটি জরুরি রক্তের আবেদন</span>
+              </label>
+
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  className="flex-1 py-3 bg-red-500 hover:bg-red-600 text-white font-extrabold rounded-xl shadow-lg shadow-red-500/10 transition-all cursor-pointer animate-none"
+                >
+                  আপডেট সংরক্ষণ করুন
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowEditRequestModal(false); setEditingRequest(null); }}
+                  className="py-3 px-5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-xl transition-all cursor-pointer"
+                >
+                  বাতিল
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* MARK AS COMPLETED (DONE) DETAILS FORM MODAL */}
+      {showCompleteRequestModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-3xl max-w-md w-full border shadow-2xl overflow-hidden flex flex-col"
+          >
+            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white p-5 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-white animate-pulse" />
+                <h3 className="font-extrabold text-base">রক্তদান সফল সমাপ্তি ফরম 🩸</h3>
+              </div>
+              <button 
+                onClick={() => setShowCompleteRequestModal(false)} 
+                className="text-white/80 hover:text-white bg-black/10 hover:bg-black/20 p-1.5 rounded-full transition-all cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitCompleteRequest} className="p-6 space-y-4 text-xs font-semibold text-slate-700">
+              <p className="text-[11px] text-slate-500 leading-relaxed mb-2">
+                এই আবেদনটি সফলভাবে সম্পন্ন করার জন্য অনুগ্রহ করে রক্তদাতার সঠিক তথ্যগুলো প্রদান করুন। যদি রক্তদাতার ফোন নম্বরটি আমাদের প্ল্যাটফর্মে নিবন্ধিত কোনো ইউজার হয়ে থাকে, তবে তার প্রোফাইলে ১টি রক্তদান কাউযুক্ত হবে এবং পরবর্তী ৯০ দিনের জন্য রক্তদানে বিরতি সময়কাল প্রযোজ্য হবে।
+              </p>
+
+              <div>
+                <label className="block text-slate-500 mb-1">রক্তদাতার নাম <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  required
+                  placeholder="যেমন: শরিফুল ইসলাম"
+                  value={doneDonorName}
+                  onChange={(e) => setDoneDonorName(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">রক্তদাতার মোবাইল নম্বর <span className="text-red-500">*</span></label>
+                <input
+                  type="tel"
+                  required
+                  placeholder="যেমন: 017XXXXXXXX"
+                  value={doneDonorPhone}
+                  onChange={(e) => setDoneDonorPhone(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">রক্তদানের তারিখ <span className="text-red-500">*</span></label>
+                <input
+                  type="date"
+                  required
+                  value={doneDonationDate}
+                  onChange={(e) => setDoneDonationDate(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">মন্তব্য (ঐচ্ছিক)</label>
+                <textarea
+                  placeholder="রক্তদান সংক্রান্ত কোনো অতিরিক্ত তথ্য বা অভিজ্ঞতা..."
+                  value={doneNotes}
+                  onChange={(e) => setDoneNotes(e.target.value)}
+                  rows={2}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800"
+                />
+              </div>
+
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="submit"
+                  disabled={submittingDone}
+                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer text-xs"
+                >
+                  {submittingDone ? "সংরক্ষণ হচ্ছে..." : "রক্তদান সম্পন্ন করুন 🩸"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCompleteRequestModal(false)}
+                  className="px-5 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all cursor-pointer"
+                >
+                  বাতিল
+                </button>
+              </div>
+            </form>
           </motion.div>
         </div>
       )}
