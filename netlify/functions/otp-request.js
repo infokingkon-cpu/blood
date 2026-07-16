@@ -1,15 +1,4 @@
 import { initFirebase } from "./utils/firebase.js";
-import { 
-  doc, 
-  getDoc, 
-  setDoc, 
-  collection, 
-  query, 
-  where, 
-  getDocs,
-  limit,
-  addDoc
-} from "firebase/firestore";
 import crypto from "crypto";
 
 const headers = {
@@ -95,12 +84,12 @@ export const handler = async (event, context) => {
     }
 
     // Initialize Firebase
-    let clientDb;
+    let adminDb;
     try {
       const fb = await initFirebase();
-      clientDb = fb.db;
+      adminDb = fb.db;
     } catch (fbErr) {
-      console.error("[OTP Request] Firebase Client initialization failed:", fbErr);
+      console.error("[OTP Request] Firebase Admin initialization failed:", fbErr);
       return {
         statusCode: 500,
         headers,
@@ -120,10 +109,11 @@ export const handler = async (event, context) => {
     // Rate Limiting checks
     try {
       // 1. IP-Based Limit: Max 5 requests/10-min window
-      const ipQuery = query(collection(clientDb, "otp_requests_log"), where("ip", "==", clientIp));
-      const ipSnap = await getDocs(ipQuery);
+      const ipQuery = await adminDb.collection("otp_requests_log")
+        .where("ip", "==", clientIp)
+        .get();
       
-      const ipRequestsInWindow = ipSnap.docs.filter(doc => {
+      const ipRequestsInWindow = ipQuery.docs.filter(doc => {
         const timestamp = doc.data().timestamp;
         return timestamp && timestamp >= tenMinutesAgo;
       });
@@ -145,10 +135,11 @@ export const handler = async (event, context) => {
       }
 
       // 2. Phone-Based Limit: Max 3 requests/10-min window
-      const phoneQuery = query(collection(clientDb, "otp_requests_log"), where("phone", "==", normalizedPhone));
-      const phoneSnap = await getDocs(phoneQuery);
+      const phoneQuery = await adminDb.collection("otp_requests_log")
+        .where("phone", "==", normalizedPhone)
+        .get();
 
-      const phoneRequestsInWindow = phoneSnap.docs.filter(doc => {
+      const phoneRequestsInWindow = phoneQuery.docs.filter(doc => {
         const timestamp = doc.data().timestamp;
         return timestamp && timestamp >= tenMinutesAgo;
       });
@@ -173,8 +164,8 @@ export const handler = async (event, context) => {
 
     // Active Verification Guard
     try {
-      const existingOtpDoc = await getDoc(doc(clientDb, "otp_verifications", normalizedPhone));
-      if (existingOtpDoc.exists()) {
+      const existingOtpDoc = await adminDb.collection("otp_verifications").doc(normalizedPhone).get();
+      if (existingOtpDoc.exists) {
         const existingData = existingOtpDoc.data();
         if (existingData && !existingData.verified && now < existingData.expiresAt) {
           const remainingSeconds = Math.ceil((existingData.expiresAt - now) / 1000);
@@ -194,8 +185,8 @@ export const handler = async (event, context) => {
 
     // Checks: Banned user, duplicate user registration
     try {
-      const bannedDoc = await getDoc(doc(clientDb, "banned_phone_numbers", normalizedPhone));
-      if (bannedDoc.exists()) {
+      const bannedDoc = await adminDb.collection("banned_phone_numbers").doc(normalizedPhone).get();
+      if (bannedDoc.exists) {
         return {
           statusCode: 403,
           headers,
@@ -204,7 +195,7 @@ export const handler = async (event, context) => {
       }
 
       // Standardize search for phone number in users database
-      const userSnap = await getDocs(query(collection(clientDb, "users"), where("phone", "==", normalizedPhone), limit(1)));
+      const userSnap = await adminDb.collection("users").where("phone", "==", normalizedPhone).limit(1).get();
       if (!userSnap.empty) {
         return {
           statusCode: 400,
@@ -278,7 +269,7 @@ export const handler = async (event, context) => {
 
     // Save session to Firestore
     try {
-      await setDoc(doc(clientDb, "otp_verifications", normalizedPhone), {
+      await adminDb.collection("otp_verifications").doc(normalizedPhone).set({
         phone: normalizedPhone,
         otpHash: otpHashValue,
         createdAt: now,
@@ -288,7 +279,7 @@ export const handler = async (event, context) => {
       });
 
       // Write rate limit log
-      await addDoc(collection(clientDb, "otp_requests_log"), {
+      await adminDb.collection("otp_requests_log").add({
         ip: clientIp,
         phone: normalizedPhone,
         timestamp: now

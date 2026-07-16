@@ -1,21 +1,18 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import admin from "firebase-admin";
+import { getFirestore } from "firebase-admin/firestore";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-const _filename = typeof __filename !== "undefined" ? __filename : fileURLToPath(import.meta.url);
-const _dirname = typeof __dirname !== "undefined" ? __dirname : path.dirname(_filename);
+const functionsDir = path.dirname(fileURLToPath(import.meta.url));
 
 export function getFirebaseConfig() {
   const possiblePaths = [
     path.resolve(process.cwd(), "firebase-applet-config.json"),
-    path.resolve(_dirname, "../../../firebase-applet-config.json"),
-    path.resolve(_dirname, "../../firebase-applet-config.json"),
-    path.resolve(_dirname, "../firebase-applet-config.json"),
-    path.resolve(_dirname, "firebase-applet-config.json")
+    path.resolve(functionsDir, "../../../firebase-applet-config.json"),
+    path.resolve(functionsDir, "../../firebase-applet-config.json"),
+    path.resolve(functionsDir, "../firebase-applet-config.json"),
+    path.resolve(functionsDir, "firebase-applet-config.json")
   ];
 
   for (const configPath of possiblePaths) {
@@ -55,39 +52,6 @@ export async function initFirebase() {
     throw new Error("Firebase configuration not found. Please set VITE_FIREBASE_PROJECT_ID etc.");
   }
 
-  let app;
-  if (getApps().length === 0) {
-    app = initializeApp(config);
-  } else {
-    app = getApp();
-  }
-
-  const db = getFirestore(app, config.firestoreDatabaseId);
-  const auth = getAuth(app);
-
-  // Authenticate as a system user to bypass default credentials limits
-  const systemEmail = "system-backend@donateblood.com";
-  const systemPassword = "SuperSecureSystemPassword123!!";
-
-  try {
-    if (!auth.currentUser) {
-      await signInWithEmailAndPassword(auth, systemEmail, systemPassword);
-      console.log("[Firebase Helper] System user logged in successfully:", systemEmail);
-    }
-  } catch (err) {
-    if (err.code === "auth/user-not-found" || err.code === "auth/invalid-credential" || err.message?.includes("not-found") || err.message?.includes("invalid")) {
-      console.log("[Firebase Helper] System user not found. Creating...");
-      try {
-        await createUserWithEmailAndPassword(auth, systemEmail, systemPassword);
-        console.log("[Firebase Helper] System user created and logged in successfully:", systemEmail);
-      } catch (createErr) {
-        console.error("[Firebase Helper] Failed to create system user:", createErr.message || createErr);
-      }
-    } else {
-      console.error("[Firebase Helper] System login failed with error:", err.message || err);
-    }
-  }
-
   // Init Firebase Admin SDK
   if (admin.apps.length === 0) {
     try {
@@ -100,5 +64,10 @@ export async function initFirebase() {
     }
   }
 
-  return { app, db, auth, admin };
+  const dbId = config.firestoreDatabaseId;
+  const db = dbId && dbId !== "(default)" 
+    ? getFirestore(undefined, dbId) 
+    : getFirestore();
+
+  return { db, admin };
 }
